@@ -6,6 +6,7 @@ import sys
 import commentjson as json
 
 from . import shared
+from . import presets
 
 
 __all__ = [
@@ -30,6 +31,8 @@ if os.path.exists("config.json"):
         config = json.load(f)
 else:
     config = {}
+    
+language = config.get("language", "auto")
 
 if os.path.exists("api_key.txt"):
     logging.info("检测到api_key.txt文件，正在进行迁移...")
@@ -154,5 +157,12 @@ if server_port is None:
         server_port = 7860
 
 assert server_port is None or type(server_port) == int, "要求port设置为int类型"
+
+# 设置默认model
+default_model = config.get("default_model", "")
+try:
+    presets.DEFAULT_MODEL = presets.MODELS.index(default_model)
+except ValueError:
+    pass
 
 share = config.get("share", False)
