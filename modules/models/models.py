@@ -9,6 +9,9 @@ import sys
 import requests
 import urllib3
 import platform
+import base64
+from io import BytesIO
+from PIL import Image
 
 from tqdm import tqdm
 import colorama
@@ -18,11 +21,11 @@ import aiohttp
 from enum import Enum
 import uuid
 
-from .presets import *
-from .llama_func import *
-from .utils import *
-from . import shared
-from .config import retrieve_proxy
+from ..presets import *
+from ..llama_func import *
+from ..utils import *
+from .. import shared
+from ..config import retrieve_proxy
 from modules import config
 from .base_model import BaseLLMModel, ModelType
 
@@ -96,6 +99,8 @@ class OpenAIClient(BaseLLMModel):
             status_text = STANDARD_ERROR_MSG + READ_TIMEOUT_MSG + ERROR_RETRIEVE_MSG
             return status_text
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             logging.error(i18n("获取API使用情况失败:") + str(e))
             return STANDARD_ERROR_MSG + ERROR_RETRIEVE_MSG
 
@@ -203,6 +208,11 @@ class OpenAIClient(BaseLLMModel):
                         continue
         if error_msg:
             raise Exception(error_msg)
+
+    def set_key(self, new_access_key):
+        ret = super().set_key(new_access_key)
+        self._refresh_header()
+        return ret
 
 
 class ChatGLM_Client(BaseLLMModel):
@@ -328,15 +338,6 @@ class LLaMA_Client(BaseLLMModel):
                 data_args=data_args,
                 pipeline_args=pipeline_args,
             )
-        # Chats
-        # model_name = model_args.model_name_or_path
-        # if model_args.lora_model_path is not None:
-        #     model_name += f" + {model_args.lora_model_path}"
-
-        # context = (
-        #     "You are a helpful assistant who follows the given instructions"
-        #     " unconditionally."
-        # )
 
     def _get_llama_style_input(self):
         history = []
@@ -391,9 +392,9 @@ class LLaMA_Client(BaseLLMModel):
             yield partial_text
 
 
-class XMBot_Client(BaseLLMModel):
+class XMChat(BaseLLMModel):
     def __init__(self, api_key):
-        super().__init__(model_name="xmbot")
+        super().__init__(model_name="xmchat")
         self.api_key = api_key
         self.session_id = None
         self.reset()
@@ -401,35 +402,76 @@ class XMBot_Client(BaseLLMModel):
         self.image_path = None
         self.xm_history = []
         self.url = "https://xmbot.net/web"
+        self.last_conv_id = None
 
     def reset(self):
         self.session_id = str(uuid.uuid4())
+        self.last_conv_id = None
         return [], "已重置"
 
-    def try_read_image(self, filepath):
-        import base64
+    def image_to_base64(self, image_path):
+        # 打开并加载图片
+        img = Image.open(image_path)
 
+        # 获取图片的宽度和高度
+        width, height = img.size
+
+        # 计算压缩比例，以确保最长边小于4096像素
+        max_dimension = 2048
+        scale_ratio = min(max_dimension / width, max_dimension / height)
+
+        if scale_ratio < 1:
+            # 按压缩比例调整图片大小
+            new_width = int(width * scale_ratio)
+            new_height = int(height * scale_ratio)
+            img = img.resize((new_width, new_height), Image.ANTIALIAS)
+
+        # 将图片转换为jpg格式的二进制数据
+        buffer = BytesIO()
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
+        img.save(buffer, format='JPEG')
+        binary_image = buffer.getvalue()
+
+        # 对二进制数据进行Base64编码
+        base64_image = base64.b64encode(binary_image).decode('utf-8')
+
+        return base64_image
+
+    def try_read_image(self, filepath):
         def is_image_file(filepath):
             # 判断文件是否为图片
             valid_image_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff"]
             file_extension = os.path.splitext(filepath)[1].lower()
             return file_extension in valid_image_extensions
 
-        def read_image_as_bytes(filepath):
-            # 读取图片文件并返回比特流
-            with open(filepath, "rb") as f:
-                image_bytes = f.read()
-            return image_bytes
-
         if is_image_file(filepath):
             logging.info(f"读取图片文件: {filepath}")
-            image_bytes = read_image_as_bytes(filepath)
-            base64_encoded_image = base64.b64encode(image_bytes).decode()
-            self.image_bytes = base64_encoded_image
+            self.image_bytes = self.image_to_base64(filepath)
             self.image_path = filepath
         else:
             self.image_bytes = None
             self.image_path = None
+
+    def like(self):
+        if self.last_conv_id is None:
+            return "点赞失败，你还没发送过消息"
+        data = {
+            "uuid": self.last_conv_id,
+            "appraise": "good"
+        }
+        requests.post(self.url, json=data)
+        return "👍点赞成功，感谢反馈～"
+
+    def dislike(self):
+        if self.last_conv_id is None:
+            return "点踩失败，你还没发送过消息"
+        data = {
+            "uuid": self.last_conv_id,
+            "appraise": "bad"
+        }
+        requests.post(self.url, json=data)
+        return "👎点踩成功，感谢反馈～"
 
     def prepare_inputs(self, real_inputs, use_websearch, files, reply_language, chatbot):
         fake_inputs = real_inputs
@@ -448,6 +490,8 @@ class XMBot_Client(BaseLLMModel):
                 chatbot = chatbot + [((self.image_path,), None)]
             if self.image_bytes is not None:
                 logging.info("使用图片作为输入")
+                # XMChat的一轮对话中实际上只能处理一张图片
+                self.reset()
                 conv_id = str(uuid.uuid4())
                 data = {
                     "user_id": self.api_key,
@@ -464,6 +508,7 @@ class XMBot_Client(BaseLLMModel):
     def get_answer_at_once(self):
         question = self.history[-1]["content"]
         conv_id = str(uuid.uuid4())
+        self.last_conv_id = conv_id
         data = {
             "user_id": self.api_key,
             "session_id": self.session_id,
@@ -528,8 +573,16 @@ def get_model(
             else:
                 msg += f" + {lora_model_path}"
             model = LLaMA_Client(model_name, lora_model_path)
-        elif model_type == ModelType.XMBot:
-            model = XMBot_Client(api_key=access_key)
+        elif model_type == ModelType.XMChat:
+            if os.environ.get("XMCHAT_API_KEY") != "":
+                access_key = os.environ.get("XMCHAT_API_KEY")
+            model = XMChat(api_key=access_key)
+        elif model_type == ModelType.StableLM:
+            from .StableLM import StableLM_Client
+            model = StableLM_Client(model_name)
+        elif model_type == ModelType.MOSS:
+            from .MOSS import MOSS_Client
+            model = MOSS_Client(model_name)
         elif model_type == ModelType.Unknown:
             raise ValueError(f"未知模型: {model_name}")
         logging.info(msg)
