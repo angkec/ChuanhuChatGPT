@@ -1,23 +1,13 @@
 from __future__ import annotations
 import logging
 
-from llama_index import Prompt
 from typing import List, Tuple
-import mdtex2html
 from gradio_client import utils as client_utils
+from gradio import utils
+import inspect
 
 from modules.presets import *
-from modules.llama_func import *
-
-
-def compact_text_chunks(self, prompt: Prompt, text_chunks: List[str]) -> List[str]:
-    logging.debug("Compacting text chunks...🚀🚀🚀")
-    combined_str = [c.strip() for c in text_chunks if c.strip()]
-    combined_str = [f"[{index+1}] {c}" for index, c in enumerate(combined_str)]
-    combined_str = "\n\n".join(combined_str)
-    # resplit based on self.max_chunk_overlap
-    text_splitter = self.get_text_splitter_given_prompt(prompt, 1, padding=1)
-    return text_splitter.split_text(combined_str)
+from modules.index_func import *
 
 
 def postprocess(
@@ -50,47 +40,70 @@ def postprocess(
         return processed_messages
 
 def postprocess_chat_messages(
-        self, chat_message: str | Tuple | List | None, message_type: str
-    ) -> str | Dict | None:
+        self, chat_message: str | tuple | list | None, role: str
+    ) -> str | dict | None:
         if chat_message is None:
             return None
-        elif isinstance(chat_message, (tuple, list)):
-            filepath = chat_message[0]
-            mime_type = client_utils.get_mimetype(filepath)
-            filepath = self.make_temp_copy_if_needed(filepath)
-            return {
-                "name": filepath,
-                "mime_type": mime_type,
-                "alt_text": chat_message[1] if len(chat_message) > 1 else None,
-                "data": None,  # These last two fields are filled in by the frontend
-                "is_file": True,
-            }
-        elif isinstance(chat_message, str):
-            if message_type == "bot":
-                if not detect_converted_mark(chat_message):
-                    chat_message = convert_mdtext(chat_message)
-            elif message_type == "user":
-                if not detect_converted_mark(chat_message):
-                    chat_message = convert_asis(chat_message)
-            return chat_message
         else:
-            raise ValueError(f"Invalid message for Chatbot component: {chat_message}")
+            if isinstance(chat_message, (tuple, list)):
+                if len(chat_message) > 0 and "text" in chat_message[0]:
+                    chat_message = chat_message[0]["text"]
+                else:
+                    file_uri = chat_message[0]
+                    if utils.validate_url(file_uri):
+                        filepath = file_uri
+                    else:
+                        filepath = self.make_temp_copy_if_needed(file_uri)
 
-with open("./assets/custom.js", "r", encoding="utf-8") as f, \
-    open("./assets/external-scripts.js", "r", encoding="utf-8") as f1:
-    customJS = f.read()
-    externalScripts = f1.read()
+                    mime_type = client_utils.get_mimetype(filepath)
+                    return {
+                        "name": filepath,
+                        "mime_type": mime_type,
+                        "alt_text": chat_message[1] if len(chat_message) > 1 else None,
+                        "data": None,  # These last two fields are filled in by the frontend
+                        "is_file": True,
+                    }
+            if isinstance(chat_message, str):
+                # chat_message = inspect.cleandoc(chat_message)
+                # escape html spaces
+                # chat_message = chat_message.replace(" ", "&nbsp;")
+                if role == "bot":
+                    chat_message = convert_bot_before_marked(chat_message)
+                elif role == "user":
+                    chat_message = convert_user_before_marked(chat_message)
+                return chat_message
+            else:
+                raise ValueError(f"Invalid message for Chatbot component: {chat_message}")
 
 
-def reload_javascript():
-    print("Reloading javascript...")
-    js = f'<script>{customJS}</script><script async>{externalScripts}</script>'
-    def template_response(*args, **kwargs):
-        res = GradioTemplateResponseOriginal(*args, **kwargs)
-        res.body = res.body.replace(b'</html>', f'{js}</html>'.encode("utf8"))
-        res.init_headers()
-        return res
 
-    gr.routes.templates.TemplateResponse = template_response
+def add_classes_to_gradio_component(comp):
+    """
+    this adds gradio-* to the component for css styling (ie gradio-button to gr.Button), as well as some others
+    code from stable-diffusion-webui <AUTOMATIC1111/stable-diffusion-webui>
+    """
 
-GradioTemplateResponseOriginal = gr.routes.templates.TemplateResponse
+    comp.elem_classes = [f"gradio-{comp.get_block_name()}", *(comp.elem_classes or [])]
+
+    if getattr(comp, 'multiselect', False):
+        comp.elem_classes.append('multiselect')
+
+
+def IOComponent_init(self, *args, **kwargs):
+    res = original_IOComponent_init(self, *args, **kwargs)
+    add_classes_to_gradio_component(self)
+
+    return res
+
+original_IOComponent_init = gr.components.IOComponent.__init__
+gr.components.IOComponent.__init__ = IOComponent_init
+
+
+def BlockContext_init(self, *args, **kwargs):
+    res = original_BlockContext_init(self, *args, **kwargs)
+    add_classes_to_gradio_component(self)
+
+    return res
+
+original_BlockContext_init = gr.blocks.BlockContext.__init__
+gr.blocks.BlockContext.__init__ = BlockContext_init
