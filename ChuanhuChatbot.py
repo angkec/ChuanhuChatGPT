@@ -23,8 +23,12 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 gr.Chatbot._postprocess_chat_messages = postprocess_chat_messages
 gr.Chatbot.postprocess = postprocess
 
-# with open("web_assets/css/ChuanhuChat.css", "r", encoding="utf-8") as f:
-#     ChuanhuChatCSS = f.read()
+
+my_api_key = os.environ['chatgptapikey']
+HEROKU_PORT = os.environ.get('PORT', 17995)
+
+# with open("assets/custom.css", "r", encoding="utf-8") as f:
+#    customCSS = f.read()
 
 
 def create_new_model():
@@ -796,12 +800,14 @@ demo.title = i18n("川虎Chat 🚀")
 
 if __name__ == "__main__":
     reload_javascript()
-    demo.queue(concurrency_count=CONCURRENT_COUNT).launch(
-        allowed_paths=["history", "web_assets"],
-        server_name=server_name,
-        server_port=server_port,
-        share=share,
-        auth=auth_from_conf if authflag else None,
-        favicon_path="./web_assets/favicon.ico",
-        inbrowser=not dockerflag,  # 禁止在docker下开启inbrowser
-    )
+    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(
+    #     server_name=server_name,
+    #     server_port=server_port,
+    #     share=share,
+    #     auth=auth_list if authflag else None,
+    #     favicon_path="./assets/favicon.ico",
+    #     inbrowser=not dockerflag, # 禁止在docker下开启inbrowser
+    # )
+    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(server_name="0.0.0.0", server_port=7860, share=False) # 可自定义端口
+    demo.queue(concurrency_count=CONCURRENT_COUNT).launch(server_name="0.0.0.0", server_port=int(HEROKU_PORT),auth=("angkec", "Password!!")) # 可设置用户名与密码
+    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(auth=("在这里填写用户名", "在这里填写密码")) # 适合Nginx反向代理
