@@ -1,0 +1,31 @@
+{
+    "language": "auto",
+    "users": [["angkec", "Password!!"]],
+    "local_embedding": false,
+    "hide_history_when_not_logged_in": true,
+    "check_update": false, 
+    "default_model": "GPT4 Turbo",
+    "chat_name_method_index": 2,
+    "bot_avatar": "default",
+    "user_avatar": "default",
+
+    "show_api_billing": false, 
+    "sensitive_id": "",
+    "usage_limit": 120,
+    "legacy_api_usage": false,
+
+    "default_chuanhu_assistant_model": "gpt-4-turbo-preview",
+
+    "latex_option": "default",
+    "advance_docs": {
+        "pdf": {
+            "two_column": false,
+            "formula_ocr": true
+        }
+    },
+
+    "multi_api_key": false,
+    "hide_my_key": true,
+    "available_models": ["GPT3.5 Turbo", "GPT4 Turbo", "GPT4 Vision"],
+    "server_name": "0.0.0.0"
+}
