@@ -291,6 +291,8 @@ def update_doc_config(two_column_pdf):
 server_name = config.get("server_name", None)
 # server_port = config.get("server_port", None)
 server_port = os.environ.get("PORT", 17995) # for heroku
+server_port = int(server_port) if server_port is not None else None
+
 if server_name is None:
     if dockerflag:
         server_name = "0.0.0.0"
