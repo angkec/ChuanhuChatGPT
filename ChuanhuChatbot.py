@@ -16,7 +16,10 @@ from modules.config import *
 from modules import config
 import gradio as gr
 import colorama
+from modules.gradio_patch import reg_patch
 
+if not hfspaceflag:
+    reg_patch()
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -37,6 +40,8 @@ def create_new_model():
 
 with gr.Blocks(theme=small_and_beautiful_theme) as demo:
     user_name = gr.Textbox("", visible=False)
+    # 激活/logout路由
+    logout_hidden_btn = gr.LogoutButton(visible=False)
     promptTemplates = gr.State(load_template(get_template_names()[0], mode=2))
     user_question = gr.State("")
     assert type(my_api_key) == str
@@ -59,6 +64,8 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
             update_btn=i18n("更新"),
             seenew_btn=i18n("详情"),
             ok_btn=i18n("好"),
+            close_btn=i18n("关闭"),
+            reboot_btn=i18n("立即重启"),
         ), visible=check_update)
 
     with gr.Row(equal_height=True, elem_id="chuanhu-body"):
@@ -127,7 +134,7 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                         show_label=False, container=False, elem_id="model-select-dropdown"
                     )
                     lora_select_dropdown = gr.Dropdown(
-                        label=i18n("选择LoRA模型"), choices=[], multiselect=False, interactive=True, visible=False,
+                        label=i18n("选择模型"), choices=[], multiselect=False, interactive=True, visible=False,
                         container=False,
                     )
                     gr.HTML(get_html("chatbot_header_btn.html").format(
@@ -201,14 +208,23 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                         obj="toolbox"), elem_classes="close-btn")
                 with gr.Tabs(elem_id="chuanhu-toolbox-tabs"):
                     with gr.Tab(label=i18n("对话")):
-                        keyTxt = gr.Textbox(
-                            show_label=True,
-                            placeholder=f"Your API-key...",
-                            value=hide_middle_chars(user_api_key.value),
-                            type="password",
-                            visible=not HIDE_MY_KEY,
-                            label="API-Key",
-                        )
+                        with gr.Accordion(label=i18n("模型"), open=not HIDE_MY_KEY, visible=not HIDE_MY_KEY):
+                            keyTxt = gr.Textbox(
+                                show_label=True,
+                                placeholder=f"Your API-key...",
+                                value=hide_middle_chars(user_api_key.value),
+                                type="password",
+                                visible=not HIDE_MY_KEY,
+                                label="API-Key",
+                                elem_id="api-key"
+                            )
+                            if multi_api_key:
+                                usageTxt = gr.Markdown(i18n(
+                                    "多账号模式已开启，无需输入key，可直接开始对话"), elem_id="usage-display", elem_classes="insert-block", visible=show_api_billing)
+                            else:
+                                usageTxt = gr.Markdown(i18n(
+                                    "**发送消息** 或 **提交key** 以显示额度"), elem_id="usage-display", elem_classes="insert-block", visible=show_api_billing)
+                        gr.Markdown("---", elem_classes="hr-line", visible=not HIDE_MY_KEY)
                         with gr.Accordion(label="Prompt", open=True):
                             systemPromptTxt = gr.Textbox(
                                 show_label=True,
@@ -245,7 +261,7 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                                                 container=False,
                                             )
                         gr.Markdown("---", elem_classes="hr-line")
-                        with gr.Accordion(label=i18n("知识库"), open=True):
+                        with gr.Accordion(label=i18n("知识库"), open=True, elem_id="gr-kb-accordion"):
                             use_websearch_checkbox = gr.Checkbox(label=i18n(
                                 "使用在线搜索"), value=False, elem_classes="switch-checkbox", elem_id="gr-websearch-cb", visible=False)
                             index_files = gr.Files(label=i18n(
@@ -351,13 +367,8 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                     gr.HTML(get_html("close_btn.html").format(
                         obj="box"), elem_classes="close-btn")
                 with gr.Tabs(elem_id="chuanhu-setting-tabs"):
-                    with gr.Tab(label=i18n("模型")):
-                        if multi_api_key:
-                            usageTxt = gr.Markdown(i18n(
-                                "多账号模式已开启，无需输入key，可直接开始对话"), elem_id="usage-display", elem_classes="insert-block", visible=show_api_billing)
-                        else:
-                            usageTxt = gr.Markdown(i18n(
-                                "**发送消息** 或 **提交key** 以显示额度"), elem_id="usage-display", elem_classes="insert-block", visible=show_api_billing)
+                    # with gr.Tab(label=i18n("模型")):
+
                         # model_select_dropdown = gr.Dropdown(
                         #     label=i18n("选择模型"), choices=MODELS, multiselect=False, value=MODELS[DEFAULT_MODEL], interactive=True
                         # )
@@ -366,18 +377,18 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                         # )
                         # with gr.Row():
 
-                        language_select_dropdown = gr.Dropdown(
-                            label=i18n("选择回复语言（针对搜索&索引功能）"),
-                            choices=REPLY_LANGUAGES,
-                            multiselect=False,
-                            value=REPLY_LANGUAGES[0],
-                        )
 
                     with gr.Tab(label=i18n("高级")):
                         gr.HTML(get_html("appearance_switcher.html").format(
                             label=i18n("切换亮暗色主题")), elem_classes="insert-block", visible=False)
                         use_streaming_checkbox = gr.Checkbox(
                             label=i18n("实时传输回答"), value=True, visible=ENABLE_STREAMING_OPTION, elem_classes="switch-checkbox"
+                        )
+                        language_select_dropdown = gr.Dropdown(
+                            label=i18n("选择回复语言（针对搜索&索引功能）"),
+                            choices=REPLY_LANGUAGES,
+                            multiselect=False,
+                            value=REPLY_LANGUAGES[0],
                         )
                         name_chat_method = gr.Dropdown(
                             label=i18n("对话命名方式"),
@@ -389,6 +400,8 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                         single_turn_checkbox = gr.Checkbox(label=i18n(
                             "单轮对话"), value=False, elem_classes="switch-checkbox", elem_id="gr-single-session-cb", visible=False)
                         # checkUpdateBtn = gr.Button(i18n("🔄 检查更新..."), visible=check_update)
+                        logout_btn = gr.Button(
+                            i18n("退出用户"), variant="primary", visible=authflag)
 
                     with gr.Tab(i18n("网络")):
                         gr.Markdown(
@@ -478,10 +491,14 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                     deleteRound_i18n=i18n("删除这轮问答"),
                     renameChat_i18n=i18n("重命名该对话"),
                     validFileName_i18n=i18n("请输入有效的文件名，不要包含以下特殊字符："),
+                    clearFileHistoryMsg_i18n=i18n("⚠️请先删除知识库中的历史文件，再尝试上传！"),
+                    dropUploadMsg_i18n=i18n("释放文件以上传"),
                 ))
             with gr.Box(elem_id="fake-gradio-components", visible=False):
                 updateChuanhuBtn = gr.Button(
                     visible=False, elem_classes="invisible-btn", elem_id="update-chuanhu-btn")
+                rebootChuanhuBtn = gr.Button(
+                    visible=False, elem_classes="invisible-btn", elem_id="reboot-chuanhu-btn")
                 changeSingleSessionBtn = gr.Button(
                     visible=False, elem_classes="invisible-btn", elem_id="change-single-session-btn")
                 changeOnlineSearchBtn = gr.Button(
@@ -505,7 +522,7 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
             loaded_stuff = current_model.auto_load()
         else:
             loaded_stuff = [gr.update(), gr.update(), gr.Chatbot.update(label=MODELS[DEFAULT_MODEL]), current_model.single_turn, current_model.temperature, current_model.top_p, current_model.n_choices, current_model.stop_sequence, current_model.token_upper_limit, current_model.max_generation_token, current_model.presence_penalty, current_model.frequency_penalty, current_model.logit_bias, current_model.user_identifier]
-        return user_info, user_name, current_model, toggle_like_btn_visibility(DEFAULT_MODEL), *loaded_stuff, init_history_list(user_name)
+        return user_info, user_name, current_model, toggle_like_btn_visibility(DEFAULT_MODEL), *loaded_stuff, init_history_list(user_name, prepend=current_model.history_file_path[:-5])
     demo.load(create_greeting, inputs=None, outputs=[
               user_info, user_name, current_model, like_dislike_area, saveFileName, systemPromptTxt, chatbot, single_turn_checkbox, temperature_slider, top_p_slider, n_choices_slider, stop_sequence_txt, max_context_length_slider, max_generation_slider, presence_penalty_slider, frequency_penalty_slider, logit_bias_txt, user_identifier_txt, historySelectList], api_name="load")
     chatgpt_predict_args = dict(
@@ -653,7 +670,7 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
                                 top_p_slider, systemPromptTxt, user_name, current_model], [current_model, status_display, chatbot], show_progress=True)
 
     # Template
-    systemPromptTxt.input(set_system_prompt, [
+    systemPromptTxt.change(set_system_prompt, [
                            current_model, systemPromptTxt], None)
     templateRefreshBtn.click(get_template_dropdown, None, [
                              templateFileSelectDropdown])
@@ -673,7 +690,7 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
     # S&L
     renameHistoryBtn.click(
         rename_chat_history,
-        [current_model, saveFileName, chatbot, user_name],
+        [current_model, saveFileName, chatbot],
         [historySelectList],
         show_progress=True,
         _js='(a,b,c,d)=>{return saveChatHistory(a,b,c,d);}'
@@ -770,6 +787,13 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
         [status_display],
         show_progress=True,
     )
+    rebootChuanhuBtn.click(
+        reboot_chuanhu,
+        [],
+        [],
+        show_progress=True,
+        _js='rebootingChuanhu'
+    )
     changeSingleSessionBtn.click(
         fn=lambda value: gr.Checkbox.update(value=value),
         inputs=[single_turn_checkbox],
@@ -788,26 +812,25 @@ with gr.Blocks(theme=small_and_beautiful_theme) as demo:
         outputs=[saveFileName, systemPromptTxt, chatbot, single_turn_checkbox, temperature_slider, top_p_slider, n_choices_slider, stop_sequence_txt, max_context_length_slider, max_generation_slider, presence_penalty_slider, frequency_penalty_slider, logit_bias_txt, user_identifier_txt],
         _js='(a,b)=>{return bgSelectHistory(a,b);}'
     )
-
-
-logging.info(
-    colorama.Back.GREEN
-    + "\n川虎的温馨提示：访问 http://localhost:7860 查看界面"
-    + colorama.Style.RESET_ALL
-)
+    logout_btn.click(
+            fn=None,
+            inputs=[],
+            outputs=[],
+            _js='self.location="/logout"'
+        )
 # 默认开启本地服务器，默认可以直接从IP访问，默认不创建公开分享链接
 demo.title = i18n("川虎Chat 🚀")
 
 if __name__ == "__main__":
     reload_javascript()
-    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(
-    #     server_name=server_name,
-    #     server_port=server_port,
-    #     share=share,
-    #     auth=auth_list if authflag else None,
-    #     favicon_path="./assets/favicon.ico",
-    #     inbrowser=not dockerflag, # 禁止在docker下开启inbrowser
-    # )
-    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(server_name="0.0.0.0", server_port=7860, share=False) # 可自定义端口
-    demo.queue(concurrency_count=CONCURRENT_COUNT).launch(server_name="0.0.0.0", server_port=int(HEROKU_PORT),auth=("angkec", "Password!!")) # 可设置用户名与密码
-    # demo.queue(concurrency_count=CONCURRENT_COUNT).launch(auth=("在这里填写用户名", "在这里填写密码")) # 适合Nginx反向代理
+    setup_wizard()
+    demo.queue(concurrency_count=CONCURRENT_COUNT).launch(
+        allowed_paths=["history", "web_assets"],
+        blocked_paths=["config.json", "files", "models", "lora", "modules"],
+        server_name=server_name,
+        server_port=server_port,
+        share=share,
+        auth=auth_from_conf if authflag else None,
+        favicon_path="./web_assets/favicon.ico",
+        inbrowser=autobrowser and not dockerflag,  # 禁止在docker下开启inbrowser
+    )
