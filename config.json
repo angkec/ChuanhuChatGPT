@@ -4,7 +4,7 @@
     "local_embedding": false,
     "hide_history_when_not_logged_in": true,
     "check_update": false, 
-    "default_model": "GPT4 Turbo",
+    "default_model": "GPT-4o",
     "chat_name_method_index": 2,
     "bot_avatar": "default",
     "user_avatar": "default",
@@ -26,6 +26,6 @@
 
     "multi_api_key": false,
     "hide_my_key": true,
-    "available_models": ["GPT3.5 Turbo", "GPT4 Turbo", "GPT4 Vision"],
+    "available_models": ["GPT3.5 Turbo", "GPT4 Turbo", "GPT4 Vision", "GPT-4o"],
     "server_name": "0.0.0.0"
 }
