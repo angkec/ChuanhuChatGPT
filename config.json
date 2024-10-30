@@ -26,6 +26,6 @@
 
     "multi_api_key": false,
     "hide_my_key": true,
-    "available_models": ["GPT3.5 Turbo", "GPT4 Turbo", "GPT4 Vision", "GPT-4o"],
+    "available_models": ["GPT-4o", "o1-preview"],
     "server_name": "0.0.0.0"
 }
